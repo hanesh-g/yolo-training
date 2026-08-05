@@ -1,0 +1,241 @@
+"""
+04_split_and_organize.py
+========================
+YOLO11m Person Detection Pipeline — Step 4: Split & Organize
+
+Applies a stratified 70/20/10 (train/val/test) split PER SOURCE DATASET
+(COCO and CrowdHuman separately), then merges into the unified dataset/
+folder structure. Also generates config/data.yaml.
+
+Key behaviors:
+    - Splits each source independently to avoid domain skew in val/test
+    - Prefixes filenames with source ID (coco_ / ch_) to prevent collisions
+    - Copies both images and label files into the unified structure
+    - Generates data.yaml with absolute paths
+    - Uses a fixed random seed for reproducibility
+
+Usage:
+    python scripts/04_split_and_organize.py
+"""
+
+import os
+import shutil
+import random
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+RAW_DIR = PROJECT_ROOT / "raw"
+DATASET_DIR = PROJECT_ROOT / "dataset"
+CONFIG_DIR = PROJECT_ROOT / "config"
+
+RANDOM_SEED = 42
+TRAIN_RATIO = 0.70
+VAL_RATIO = 0.20
+TEST_RATIO = 0.10
+
+# Source definitions: (prefix, images_dir, labels_dir, image_extension_pattern)
+SOURCES = {
+    "coco_train": {
+        "prefix": "coco_",
+        "images": RAW_DIR / "coco" / "images" / "train2017",
+        "labels": RAW_DIR / "coco" / "labels_yolo" / "train",
+        "split": True,  # This source needs to be split (70/20/10)
+    },
+    "coco_val": {
+        "prefix": "coco_",
+        "images": RAW_DIR / "coco" / "images" / "val2017",
+        "labels": RAW_DIR / "coco" / "labels_yolo" / "val",
+        "split": True,  # Also split — COCO's original val is NOT our val
+    },
+    "crowdhuman_train": {
+        "prefix": "ch_",
+        "images": RAW_DIR / "crowdhuman" / "images",
+        "labels": RAW_DIR / "crowdhuman" / "labels_yolo" / "train",
+        "split": True,
+    },
+    "crowdhuman_val": {
+        "prefix": "ch_",
+        "images": RAW_DIR / "crowdhuman" / "images",
+        "labels": RAW_DIR / "crowdhuman" / "labels_yolo" / "val",
+        "split": True,
+    },
+}
+
+
+def print_header(msg: str) -> None:
+    width = 60
+    print(f"\n{'=' * width}")
+    print(f"  {msg}")
+    print(f"{'=' * width}")
+
+
+def find_paired_samples(images_dir: Path, labels_dir: Path) -> list:
+    """
+    Find images that have a corresponding YOLO label file.
+    Returns list of (image_path, label_path) tuples.
+    """
+    paired = []
+    if not labels_dir.exists():
+        return paired
+
+    label_files = {f.stem: f for f in labels_dir.glob("*.txt")}
+
+    for ext in ["*.jpg", "*.jpeg", "*.png"]:
+        for img_path in images_dir.glob(ext):
+            if img_path.stem in label_files:
+                paired.append((img_path, label_files[img_path.stem]))
+
+    return paired
+
+
+def split_data(paired: list, seed: int = RANDOM_SEED) -> dict:
+    """
+    Split paired (image, label) list into train/val/test with 70/20/10 ratio.
+    Returns dict with keys 'train', 'val', 'test'.
+    """
+    if len(paired) == 0:
+        return {"train": [], "val": [], "test": []}
+
+    # First split: 70% train, 30% temp (val + test)
+    train, temp = train_test_split(paired, train_size=TRAIN_RATIO, random_state=seed)
+
+    # Second split: from the 30% temp, split into ~66.67% val (20% of total) and ~33.33% test (10% of total)
+    val_ratio_of_temp = VAL_RATIO / (VAL_RATIO + TEST_RATIO)
+    val, test = train_test_split(temp, train_size=val_ratio_of_temp, random_state=seed)
+
+    return {"train": train, "val": val, "test": test}
+
+
+def copy_files(pairs: list, prefix: str, split_name: str, stats: dict) -> None:
+    """Copy image + label pairs into the unified dataset structure."""
+    img_dest = DATASET_DIR / "images" / split_name
+    lbl_dest = DATASET_DIR / "labels" / split_name
+    img_dest.mkdir(parents=True, exist_ok=True)
+    lbl_dest.mkdir(parents=True, exist_ok=True)
+
+    for img_path, lbl_path in pairs:
+        # Prefix filename to avoid collisions between sources
+        new_img_name = f"{prefix}{img_path.name}"
+        new_lbl_name = f"{prefix}{lbl_path.name}"
+
+        img_target = img_dest / new_img_name
+        lbl_target = lbl_dest / new_lbl_name
+
+        if not img_target.exists():
+            shutil.copy2(str(img_path), str(img_target))
+        if not lbl_target.exists():
+            shutil.copy2(str(lbl_path), str(lbl_target))
+
+        stats[split_name] = stats.get(split_name, 0) + 1
+
+
+def generate_data_yaml() -> None:
+    """Generate config/data.yaml for Ultralytics YOLO training."""
+    print_header("Generating data.yaml")
+
+    yaml_path = CONFIG_DIR / "data.yaml"
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use forward slashes for cross-platform compatibility
+    dataset_path = str(DATASET_DIR).replace("\\", "/")
+
+    yaml_content = f"""# YOLO11m Person Detection — Dataset Configuration
+# Auto-generated by 04_split_and_organize.py
+# Phase 1: COCO + CrowdHuman (fbox only), single class
+
+path: {dataset_path}
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: person
+"""
+
+    with open(yaml_path, "w") as f:
+        f.write(yaml_content)
+
+    print(f"  ✓ Written to: {yaml_path}")
+    print(f"  Dataset path : {dataset_path}")
+
+
+def count_dir_files(dir_path: Path, pattern: str = "*.*") -> int:
+    """Count files matching pattern in a directory."""
+    if not dir_path.exists():
+        return 0
+    return len(list(dir_path.glob(pattern)))
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    print_header("YOLO11m Person Detection — Split & Organize")
+    print(f"  Split ratio: {TRAIN_RATIO:.0%} / {VAL_RATIO:.0%} / {TEST_RATIO:.0%}")
+    print(f"  Random seed: {RANDOM_SEED}")
+    print(f"  Output: {DATASET_DIR}")
+
+    # Collect all samples per logical source group for splitting
+    # Group COCO train+val together, CrowdHuman train+val together
+    # (we re-split them ourselves with our own 70/20/10 ratio)
+    source_groups = {
+        "COCO": [],
+        "CrowdHuman": [],
+    }
+
+    for source_name, cfg in SOURCES.items():
+        print(f"\n  → Scanning {source_name}...")
+        paired = find_paired_samples(cfg["images"], cfg["labels"])
+        print(f"    Found {len(paired):,} paired (image + label) samples")
+
+        if "coco" in source_name:
+            source_groups["COCO"].extend([(p, cfg["prefix"]) for p in paired])
+        else:
+            source_groups["CrowdHuman"].extend([(p, cfg["prefix"]) for p in paired])
+
+    # Split each source group independently
+    print_header("Splitting per source dataset")
+    overall_stats = {"train": 0, "val": 0, "test": 0}
+
+    for group_name, items in source_groups.items():
+        if not items:
+            print(f"\n  ⚠ {group_name}: No samples found — skipping")
+            continue
+
+        # Unpack
+        paired_list = [item[0] for item in items]
+        prefix = items[0][1]  # All items in a group share the same prefix
+
+        print(f"\n  {group_name}: {len(paired_list):,} total samples")
+        splits = split_data(paired_list, seed=RANDOM_SEED)
+
+        for split_name, pairs in splits.items():
+            print(f"    {split_name:5s}: {len(pairs):,} samples")
+            group_stats = {}
+            copy_files(pairs, prefix, split_name, group_stats)
+            overall_stats[split_name] += group_stats.get(split_name, 0)
+
+    # Generate data.yaml
+    generate_data_yaml()
+
+    # Print final summary
+    print_header("Split & Organize Complete — Summary")
+    total = sum(overall_stats.values())
+    for split_name in ["train", "val", "test"]:
+        count = overall_stats[split_name]
+        pct = (count / total * 100) if total > 0 else 0
+        img_count = count_dir_files(DATASET_DIR / "images" / split_name, "*.jpg") + \
+                    count_dir_files(DATASET_DIR / "images" / split_name, "*.png")
+        lbl_count = count_dir_files(DATASET_DIR / "labels" / split_name, "*.txt")
+        print(f"  {split_name:5s}: {count:>7,} samples ({pct:5.1f}%)  |  images: {img_count:,}  labels: {lbl_count:,}")
+
+    print(f"\n  Total: {total:,} samples")
+    print(f"  Dataset: {DATASET_DIR}")
+    print(f"  Config:  {CONFIG_DIR / 'data.yaml'}")
+    print()
+    print("  Next step: python scripts/05_sanity_check.py")
+    print()

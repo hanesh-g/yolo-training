@@ -1,0 +1,18 @@
+# Datasets and outputs
+raw/
+dataset/
+validation_temp/
+sanity_checks/
+innovision_person_detection/
+deliverable/
+config/
+
+# Weights
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+.env
+.venv
+venv/
