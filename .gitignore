@@ -1,11 +1,19 @@
 # Datasets and outputs
 raw/
 dataset/
+dataset_coco/
+dataset_combined/
+dataset_crowdhuman/
 validation_temp/
 sanity_checks/
 innovision_person_detection/
 deliverable/
 config/
+
+# Large files (datasets, zips)
+train2017/
+train2017.zip
+*.zip
 
 # Weights
 *.pt

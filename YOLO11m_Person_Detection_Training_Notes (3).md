@@ -301,7 +301,7 @@ At 150 epochs on an A100: roughly **20–30 hours** total training time.
 
 ### Still open
 1. **Denoising/upscaling layer** — recommend validating against real camera footage failure modes *before* committing to build it, given latency and error-compounding risks. Unrelated to the fbox/WiderPerson decisions, can be discussed separately.
-2. **Detection-accuracy vs. downstream-module framing** — recommend reporting results broken down by dimensions relevant to face recognition, tracking, and crowd density separately, not just a single aggregate detection metric.
+2. **Detection-accuracy vs. downstream-module framing** — recommend reporting results broken down by dimensions relevant to face recognition, tracking, and crowd density separately, not just a single aggregate detection metric.how to switch on hotspot in ubuntu when connected to ethernet
 3. **WiderPerson Phase 2 timing** — worth asking roughly when Phase 2 is expected, so the Phase 1 pipeline/scripts can be built in a way that's easy to extend later (e.g., conversion scripts structured to add a third source without a rewrite).
 4. **GPU access/provisioning** — confirm before the 4-day timeline starts, to avoid queueing delays eating into the schedule.
 

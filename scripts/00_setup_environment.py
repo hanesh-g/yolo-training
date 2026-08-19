@@ -84,7 +84,7 @@ def verify_gpu() -> None:
         print(f"  CUDA available  : {cuda_available}")
         if cuda_available:
             device_name = torch.cuda.get_device_name(0)
-            vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024**3)
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             print(f"  GPU device      : {device_name}")
             print(f"  VRAM            : {vram_gb:.1f} GB")
             print("  ✓ GPU is ready.")

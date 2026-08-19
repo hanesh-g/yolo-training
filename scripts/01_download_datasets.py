@@ -198,6 +198,7 @@ def download_crowdhuman() -> None:
             print(f"    • {f}")
 
         try:
+            # pyrefly: ignore [missing-import]
             import gdown
         except ImportError:
             print("\n  ✗ gdown not installed. Install it with: pip install gdown")

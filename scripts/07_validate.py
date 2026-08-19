@@ -49,14 +49,14 @@ def print_header(msg: str) -> None:
     print(f"{'=' * width}")
 
 
-def create_source_subset(source_name: str, prefix: str, split: str = "test") -> Path:
+def create_source_subset(source_name: str, prefix: str, split: str = "test", dataset_dir: Path = DATASET_DIR) -> Path:
     """
     Create a temporary dataset subset containing only images from a specific source.
     Returns path to the temporary data.yaml for this subset.
     """
     subset_dir = PROJECT_ROOT / "validation_temp" / source_name
-    img_src = DATASET_DIR / "images" / split
-    lbl_src = DATASET_DIR / "labels" / split
+    img_src = dataset_dir / "images" / split
+    lbl_src = dataset_dir / "labels" / split
 
     img_dst = subset_dir / "images" / split
     lbl_dst = subset_dir / "labels" / split
@@ -117,9 +117,14 @@ def format_metric(val, fmt: str = ".4f") -> str:
     return f"{val:{fmt}}"
 
 
-def run_validation(model_path: str, split: str = "test") -> dict:
+def run_validation(model_path: str, split: str = "test", data_yaml_path: Path = DATA_YAML) -> dict:
     """Run the full validation pipeline."""
     from ultralytics import YOLO
+
+    # Extract dataset_dir from data.yaml
+    with open(data_yaml_path, "r") as f:
+        data_cfg = yaml.safe_load(f)
+    dataset_dir = Path(data_cfg.get("path", DATASET_DIR))
 
     all_metrics = {
         "timestamp": datetime.now().isoformat(),
@@ -133,7 +138,7 @@ def run_validation(model_path: str, split: str = "test") -> dict:
 
     # --- 1. Overall validation on full test set ---
     print_header(f"Overall Validation ({split} split)")
-    results = model.val(data=str(DATA_YAML), split=split)
+    results = model.val(data=str(data_yaml_path), split=split)
     overall = extract_metrics(results)
     all_metrics["overall"] = overall
 
@@ -150,9 +155,11 @@ def run_validation(model_path: str, split: str = "test") -> dict:
         print(f"\n  --- {source_name.upper()} ---")
 
         # Check if any images exist for this source
-        test_imgs = DATASET_DIR / "images" / split
-        source_count = sum(1 for f in test_imgs.iterdir()
-                          if f.name.startswith(prefix) and f.suffix.lower() in [".jpg", ".jpeg", ".png"])
+        test_imgs = dataset_dir / "images" / split
+        source_count = 0
+        if test_imgs.exists():
+            source_count = sum(1 for f in test_imgs.iterdir()
+                              if f.name.startswith(prefix) and f.suffix.lower() in [".jpg", ".jpeg", ".png"])
 
         if source_count == 0:
             print(f"  ⚠ No {source_name} images in {split} split — skipping")
@@ -160,7 +167,7 @@ def run_validation(model_path: str, split: str = "test") -> dict:
             continue
 
         # Create temporary subset
-        subset_yaml = create_source_subset(source_name, prefix, split)
+        subset_yaml = create_source_subset(source_name, prefix, split, dataset_dir)
 
         # Run validation on subset
         try:
@@ -226,10 +233,12 @@ def print_comparison_table(metrics: dict) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="YOLO11m Person Detection — Validation")
     parser.add_argument("--model", type=str, default=None, help=f"Path to model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--data", type=str, default=None, help="Path to data.yaml (default: config/data.yaml)")
     parser.add_argument("--split", type=str, default="test", help="Split to validate on (default: test)")
     args = parser.parse_args()
 
     model_path = Path(args.model) if args.model else DEFAULT_MODEL
+    data_yaml_path = Path(args.data) if args.data else DATA_YAML
 
     print_header("YOLO11m Person Detection — Validation")
 
@@ -240,10 +249,11 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"  Model : {model_path}")
+    print(f"  Data  : {data_yaml_path}")
     print(f"  Split : {args.split}")
 
     # Run validation
-    metrics = run_validation(model_path, split=args.split)
+    metrics = run_validation(model_path, split=args.split, data_yaml_path=data_yaml_path)
 
     # Print comparison table
     print_comparison_table(metrics)

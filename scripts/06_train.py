@@ -61,17 +61,19 @@ def print_header(msg: str) -> None:
     print(f"{'=' * width}")
 
 
-def verify_prerequisites() -> bool:
+def verify_prerequisites(args: argparse.Namespace) -> bool:
     """Verify all prerequisites are in place before training."""
     ok = True
 
+    data_yaml_path = Path(args.data) if args.data else DATA_YAML
+
     # Check data.yaml
-    if not DATA_YAML.exists():
-        print(f"  ✗ data.yaml not found at: {DATA_YAML}")
-        print(f"    Run scripts/04_split_and_organize.py first.")
+    if not data_yaml_path.exists():
+        print(f"  ✗ data.yaml not found at: {data_yaml_path}")
+        print(f"    Run scripts/04_split_and_organize.py (or 04b) first.")
         ok = False
     else:
-        print(f"  ✓ data.yaml: {DATA_YAML}")
+        print(f"  ✓ data.yaml: {data_yaml_path}")
 
     # Check pretrained model
     if not PRETRAINED_MODEL.exists():
@@ -86,7 +88,7 @@ def verify_prerequisites() -> bool:
         import torch
         if torch.cuda.is_available():
             gpu_name = torch.cuda.get_device_name(0)
-            vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024**3)
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             print(f"  ✓ GPU: {gpu_name} ({vram_gb:.1f} GB VRAM)")
         else:
             print(f"  ⚠ No CUDA GPU detected — training will be VERY slow on CPU")
@@ -94,17 +96,18 @@ def verify_prerequisites() -> bool:
         print(f"  ✗ PyTorch not found")
         ok = False
 
-    # Check dataset directories
-    for split in ["train", "val"]:
-        img_dir = PROJECT_ROOT / "dataset" / "images" / split
-        lbl_dir = PROJECT_ROOT / "dataset" / "labels" / split
-        if img_dir.exists() and lbl_dir.exists():
-            img_count = len(list(img_dir.iterdir()))
-            lbl_count = len(list(lbl_dir.glob("*.txt")))
-            print(f"  ✓ {split}: {img_count:,} images, {lbl_count:,} labels")
-        else:
-            print(f"  ✗ {split} split not found")
-            ok = False
+    # Check dataset directories (only checking if default dataset/ is used, otherwise assume data.yaml is correct)
+    if not args.data:
+        for split in ["train", "val"]:
+            img_dir = PROJECT_ROOT / "dataset" / "images" / split
+            lbl_dir = PROJECT_ROOT / "dataset" / "labels" / split
+            if img_dir.exists() and lbl_dir.exists():
+                img_count = len(list(img_dir.iterdir()))
+                lbl_count = len(list(lbl_dir.glob("*.txt")))
+                print(f"  ✓ {split}: {img_count:,} images, {lbl_count:,} labels")
+            else:
+                print(f"  ✗ {split} split not found")
+                ok = False
 
     return ok
 
@@ -116,7 +119,8 @@ def run_training(args: argparse.Namespace) -> None:
     # Determine model path
     if args.resume:
         # Resume from last checkpoint
-        last_pt = PROJECT_ROOT / "innovision_person_detection" / "yolo11m_fbox_v1" / "weights" / "last.pt"
+        run_name = args.name if args.name else "yolo11m_fbox_v1"
+        last_pt = PROJECT_ROOT / "innovision_person_detection" / run_name / "weights" / "last.pt"
         if not last_pt.exists():
             print(f"  ✗ Cannot resume — last.pt not found at: {last_pt}")
             sys.exit(1)
@@ -129,7 +133,7 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Build training config with overrides
     train_config = TRAINING_DEFAULTS.copy()
-    train_config["data"] = str(DATA_YAML)
+    train_config["data"] = str(Path(args.data).resolve()) if args.data else str(DATA_YAML)
 
     # Apply CLI overrides
     if args.batch is not None:
@@ -142,6 +146,8 @@ def run_training(args: argparse.Namespace) -> None:
         train_config["epochs"] = args.epochs
     if args.patience is not None:
         train_config["patience"] = args.patience
+    if args.name is not None:
+        train_config["name"] = args.name
 
     # Print training configuration
     print_header("Training Configuration")
@@ -193,6 +199,8 @@ Examples:
     parser.add_argument("--workers", type=int, default=None, help="Dataloader workers (default: 8)")
     parser.add_argument("--epochs", type=int, default=None, help="Max epochs (default: 150)")
     parser.add_argument("--patience", type=int, default=None, help="Early stopping patience (default: 30)")
+    parser.add_argument("--data", type=str, default=None, help="Path to custom data.yaml")
+    parser.add_argument("--name", type=str, default=None, help="Custom run name")
     parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
     args = parser.parse_args()
 
@@ -200,7 +208,7 @@ Examples:
 
     # Pre-flight checks
     print_header("Pre-flight Checks")
-    if not verify_prerequisites():
+    if not verify_prerequisites(args):
         print("\n  ✗ Prerequisites not met. Fix the issues above and try again.")
         sys.exit(1)
 

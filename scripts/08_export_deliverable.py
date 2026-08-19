@@ -44,7 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DELIVERABLE_DIR = PROJECT_ROOT / "deliverable"
 
 # Default training run directory
-DEFAULT_RUN_DIR = PROJECT_ROOT / "innovision_person_detection" / "yolo11m_fbox_v1"
+DEFAULT_RUN_DIR = PROJECT_ROOT / "innovision_person_detection" / "yolo11m_combined_v1"
 
 # Files to copy from the training run
 WEIGHT_FILES = ["best.pt", "last.pt"]
