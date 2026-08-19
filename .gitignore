@@ -10,10 +10,11 @@ innovision_person_detection/
 deliverable/
 config/
 
-# Large files (datasets, zips)
+# Large files (datasets, zips, videos)
 train2017/
 train2017.zip
 *.zip
+videos/
 
 # Weights
 *.pt
